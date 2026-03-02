@@ -3,6 +3,7 @@ package pg
 import (
 	"fmt"
 
+	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -19,6 +20,7 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 	if skillsDir == "" {
 		skillsDir = "~/.goclaw/skills-store"
 	}
+	skillsDir = config.ExpandHome(skillsDir)
 
 	return &store.Stores{
 		Sessions:  NewPGSessionStore(db),

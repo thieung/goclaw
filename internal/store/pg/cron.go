@@ -126,7 +126,7 @@ func (s *PGCronStore) GetJob(jobID string) (*store.CronJob, bool) {
 	return job, true
 }
 
-func (s *PGCronStore) ListJobs(includeDisabled bool, agentID, userID string) []store.CronJob {
+func (s *PGCronStore) ListJobs(filter store.ListJobsFilter) []store.CronJob {
 	q := `SELECT id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
 		 interval_ms, payload, delete_after_run, next_run_at, last_run_at, last_status, last_error,
 		 created_at, updated_at FROM cron_jobs WHERE 1=1`
@@ -134,21 +134,41 @@ func (s *PGCronStore) ListJobs(includeDisabled bool, agentID, userID string) []s
 	var args []interface{}
 	argIdx := 1
 
-	if !includeDisabled {
+	// Apply filters
+	if !filter.IncludeDisabled {
 		q += fmt.Sprintf(" AND enabled = $%d", argIdx)
 		args = append(args, true)
 		argIdx++
 	}
-	if agentID != "" {
-		if aid, err := uuid.Parse(agentID); err == nil {
+	if filter.StatusFilter == "enabled" {
+		q += fmt.Sprintf(" AND enabled = $%d", argIdx)
+		args = append(args, true)
+		argIdx++
+	} else if filter.StatusFilter == "disabled" {
+		q += fmt.Sprintf(" AND enabled = false AND (enabled = $%d OR 1=0)", argIdx)
+		args = append(args, false)
+		argIdx++
+	}
+	if filter.AgentFilter != "" && filter.AgentFilter != "all" {
+		if aid, err := uuid.Parse(filter.AgentFilter); err == nil {
 			q += fmt.Sprintf(" AND agent_id = $%d", argIdx)
 			args = append(args, aid)
 			argIdx++
 		}
 	}
-	if userID != "" {
+	if filter.UserID != "" {
 		q += fmt.Sprintf(" AND user_id = $%d", argIdx)
-		args = append(args, userID)
+		args = append(args, filter.UserID)
+		argIdx++
+	}
+	if filter.Search != "" {
+		q += fmt.Sprintf(" AND (name ILIKE $%d OR payload::text ILIKE $%d)", argIdx, argIdx)
+		args = append(args, "%"+filter.Search+"%", "%"+filter.Search+"%")
+		argIdx++
+	}
+	if filter.ScheduleFilter != "" && filter.ScheduleFilter != "all" {
+		q += fmt.Sprintf(" AND schedule_kind = $%d", argIdx)
+		args = append(args, filter.ScheduleFilter)
 		argIdx++
 	}
 
@@ -369,27 +389,37 @@ func (s *PGCronStore) EnableJob(jobID string, enabled bool) error {
 	return nil
 }
 
-func (s *PGCronStore) GetRunLog(jobID string, limit int) []store.CronRunLogEntry {
+func (s *PGCronStore) GetRunLog(jobID string, limit, offset int) ([]store.CronRunLogEntry, int, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Count total
+	var total int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM cron_run_logs WHERE job_id = (SELECT id FROM cron_jobs WHERE id = $1)", jobID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count run logs: %w", err)
+	}
 
 	var rows *sql.Rows
-	var err error
-	if jobID != "" {
-		id, parseErr := uuid.Parse(jobID)
-		if parseErr != nil {
-			return nil
-		}
-		rows, err = s.db.Query(
-			"SELECT job_id, status, error, summary, ran_at FROM cron_run_logs WHERE job_id = $1 ORDER BY ran_at DESC LIMIT $2",
-			id, limit)
-	} else {
-		rows, err = s.db.Query(
-			"SELECT job_id, status, error, summary, ran_at FROM cron_run_logs ORDER BY ran_at DESC LIMIT $1", limit)
+	id, parseErr := uuid.Parse(jobID)
+	if parseErr != nil {
+		return nil, 0, fmt.Errorf("invalid job ID: %s", jobID)
 	}
+
+	rows, err = s.db.Query(`
+		SELECT job_id, status, error, summary, duration_ms, input_tokens, output_tokens, ran_at
+		FROM cron_run_logs
+		WHERE job_id = $1
+		ORDER BY ran_at DESC
+		LIMIT $2 OFFSET $3
+	`, id, limit, offset)
+
 	if err != nil {
-		return nil
+		return nil, 0, fmt.Errorf("query run logs: %w", err)
 	}
 	defer rows.Close()
 
@@ -398,19 +428,42 @@ func (s *PGCronStore) GetRunLog(jobID string, limit int) []store.CronRunLogEntry
 		var jobUUID uuid.UUID
 		var status string
 		var errStr, summary *string
+		var durationMS sql.NullInt32
+		var inputTokens, outputTokens sql.NullInt32
 		var ranAt time.Time
-		if err := rows.Scan(&jobUUID, &status, &errStr, &summary, &ranAt); err != nil {
+		if err := rows.Scan(&jobUUID, &status, &errStr, &summary, &durationMS, &inputTokens, &outputTokens, &ranAt); err != nil {
 			continue
 		}
-		result = append(result, store.CronRunLogEntry{
+
+		entry := store.CronRunLogEntry{
 			Ts:      ranAt.UnixMilli(),
 			JobID:   jobUUID.String(),
 			Status:  status,
 			Error:   derefStr(errStr),
 			Summary: derefStr(summary),
-		})
+		}
+
+		if durationMS.Valid {
+			v := int(durationMS.Int32)
+			entry.DurationMS = &v
+		}
+		if inputTokens.Valid {
+			v := int(inputTokens.Int32)
+			entry.InputTokens = &v
+		}
+		if outputTokens.Valid {
+			v := int(outputTokens.Int32)
+			entry.OutputTokens = &v
+		}
+
+		result = append(result, entry)
 	}
-	return result
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("scan run logs: %w", err)
+	}
+
+	return result, total, nil
 }
 
 func (s *PGCronStore) Status() map[string]interface{} {

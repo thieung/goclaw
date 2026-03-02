@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
+	"github.com/nextlevelbuilder/goclaw/internal/store/pg"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
@@ -34,17 +35,37 @@ func (m *CronMethods) Register(router *gateway.MethodRouter) {
 
 func (m *CronMethods) handleList(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	var params struct {
-		IncludeDisabled bool `json:"includeDisabled"`
+		IncludeDisabled bool   `json:"includeDisabled"`
+		Search          string `json:"search"`
+		StatusFilter    string `json:"statusFilter"` // "all", "enabled", "disabled"
+		AgentFilter     string `json:"agentFilter"`
+		ScheduleFilter  string `json:"scheduleFilter"` // "all", "every", "cron", "at"
 	}
 	if req.Params != nil {
 		json.Unmarshal(req.Params, &params)
 	}
 
-	jobs := m.service.ListJobs(params.IncludeDisabled, "", "")
+	// Build filter
+	filter := store.ListJobsFilter{
+		IncludeDisabled: params.IncludeDisabled,
+		Search:          params.Search,
+		StatusFilter:    params.StatusFilter,
+		AgentFilter:     params.AgentFilter,
+		ScheduleFilter:  params.ScheduleFilter,
+	}
+
+	jobs := m.service.ListJobs(filter)
+
+	// Detect mode from store type
+	mode := "standalone"
+	if _, ok := m.service.(*pg.PGCronStore); ok {
+		mode = "managed"
+	}
 
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]interface{}{
-		"jobs":   jobs,
-		"status": m.service.Status(),
+		"jobs":  jobs,
+		"mode":  mode,
+		"count": len(jobs),
 	}))
 }
 
@@ -206,9 +227,10 @@ func (m *CronMethods) handleRun(_ context.Context, client *gateway.Client, req *
 
 func (m *CronMethods) handleRuns(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	var params struct {
-		JobID string `json:"jobId"`
-		ID    string `json:"id"`
-		Limit int    `json:"limit"`
+		JobID  string `json:"jobId"`
+		ID     string `json:"id"`
+		Limit  int    `json:"limit"`
+		Offset int    `json:"offset"`
 	}
 	if req.Params != nil {
 		json.Unmarshal(req.Params, &params)
@@ -219,8 +241,22 @@ func (m *CronMethods) handleRuns(_ context.Context, client *gateway.Client, req 
 		jobID = params.ID
 	}
 
-	entries := m.service.GetRunLog(jobID, params.Limit)
+	// Apply defaults
+	if params.Limit <= 0 {
+		params.Limit = 20
+	}
+	if params.Offset < 0 {
+		params.Offset = 0
+	}
+
+	entries, total, err := m.service.GetRunLog(jobID, params.Limit, params.Offset)
+	if err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
+		return
+	}
+
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]interface{}{
 		"entries": entries,
+		"total":   total,
 	}))
 }

@@ -40,7 +40,10 @@ func cronListCmd() *cobra.Command {
 				return
 			}
 			svc := loadCronStore()
-			jobs := svc.ListJobs(showDisabled, "", "")
+			filter := store.ListJobsFilter{
+				IncludeDisabled: showDisabled,
+			}
+			jobs := svc.ListJobs(filter)
 			printCronJobs(jobs, jsonOutput)
 		},
 	}
@@ -95,7 +98,10 @@ func cronToggleCmd() *cobra.Command {
 func cronListRPC(showDisabled, jsonOutput bool) {
 	requireGatewayForManaged()
 
-	params, _ := json.Marshal(map[string]interface{}{"includeDisabled": showDisabled})
+	params, _ := json.Marshal(map[string]interface{}{
+		"includeDisabled": showDisabled,
+		"statusFilter":    "all",
+	})
 	resp, err := gatewayRPC(protocol.MethodCronList, params)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

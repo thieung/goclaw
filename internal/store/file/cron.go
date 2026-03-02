@@ -1,6 +1,7 @@
 package file
 
 import (
+	"strings"
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/cron"
@@ -38,11 +39,42 @@ func (f *FileCronStore) GetJob(jobID string) (*store.CronJob, bool) {
 	return &result, true
 }
 
-func (f *FileCronStore) ListJobs(includeDisabled bool, agentID, userID string) []store.CronJob {
-	jobs := f.svc.ListJobs(includeDisabled)
-	result := make([]store.CronJob, len(jobs))
-	for i, j := range jobs {
-		result[i] = cronJobToStore(&j)
+func (f *FileCronStore) ListJobs(filter store.ListJobsFilter) []store.CronJob {
+	jobs := f.svc.ListJobs(filter.IncludeDisabled)
+	var result []store.CronJob
+
+	for _, j := range jobs {
+		job := cronJobToStore(&j)
+
+		// Apply filters
+		if filter.StatusFilter == "enabled" && !job.Enabled {
+			continue
+		}
+		if filter.StatusFilter == "disabled" && job.Enabled {
+			continue
+		}
+		if filter.AgentFilter != "" && filter.AgentFilter != "all" {
+			if job.AgentID != filter.AgentFilter {
+				continue
+			}
+		}
+		if filter.UserID != "" && job.UserID != filter.UserID {
+			continue
+		}
+		if filter.Search != "" {
+			searchLower := strings.ToLower(filter.Search)
+			if !strings.Contains(strings.ToLower(job.Name), searchLower) &&
+				!strings.Contains(strings.ToLower(job.Payload.Message), searchLower) {
+				continue
+			}
+		}
+		if filter.ScheduleFilter != "" && filter.ScheduleFilter != "all" {
+			if job.Schedule.Kind != filter.ScheduleFilter {
+				continue
+			}
+		}
+
+		result = append(result, job)
 	}
 	return result
 }
@@ -65,19 +97,42 @@ func (f *FileCronStore) EnableJob(jobID string, enabled bool) error {
 	return f.svc.EnableJob(jobID, enabled)
 }
 
-func (f *FileCronStore) GetRunLog(jobID string, limit int) []store.CronRunLogEntry {
-	entries := f.svc.GetRunLog(jobID, limit)
-	result := make([]store.CronRunLogEntry, len(entries))
-	for i, e := range entries {
+func (f *FileCronStore) GetRunLog(jobID string, limit, offset int) ([]store.CronRunLogEntry, int, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// In-memory run logs (max 200) - fetch all to enable pagination
+	allLogs := f.svc.GetRunLog(jobID, 200) // Returns up to 200 logs
+
+	total := len(allLogs)
+	start := offset
+	end := offset + limit
+
+	if start >= total {
+		return []store.CronRunLogEntry{}, total, nil
+	}
+	if end > total {
+		end = total
+	}
+
+	paginatedLogs := allLogs[start:end]
+	result := make([]store.CronRunLogEntry, len(paginatedLogs))
+	for i, e := range paginatedLogs {
 		result[i] = store.CronRunLogEntry{
 			Ts:      e.Ts,
 			JobID:   e.JobID,
 			Status:  e.Status,
 			Error:   e.Error,
 			Summary: e.Summary,
+			// File store doesn't have token/duration stats
 		}
 	}
-	return result
+
+	return result, total, nil
 }
 
 func (f *FileCronStore) Status() map[string]interface{} {

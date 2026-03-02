@@ -46,11 +46,16 @@ type CronJobState struct {
 
 // CronRunLogEntry records a job execution.
 type CronRunLogEntry struct {
-	Ts      int64  `json:"ts"`
-	JobID   string `json:"jobId"`
-	Status  string `json:"status,omitempty"`
-	Error   string `json:"error,omitempty"`
-	Summary string `json:"summary,omitempty"`
+	Ts           int64  `json:"ts"`
+	JobID        string `json:"jobId"`
+	Status       string `json:"status,omitempty"`
+	Error        string `json:"error,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+
+	// Extended fields (managed mode only)
+	DurationMS   *int `json:"durationMs,omitempty"`
+	InputTokens  *int `json:"inputTokens,omitempty"`
+	OutputTokens *int `json:"outputTokens,omitempty"`
 }
 
 // CronJobResult is the output of a cron job handler execution.
@@ -74,15 +79,25 @@ type CronJobPatch struct {
 	DeleteAfterRun *bool         `json:"deleteAfterRun,omitempty"`
 }
 
+// ListJobsFilter holds filter parameters for listing jobs.
+type ListJobsFilter struct {
+	IncludeDisabled bool
+	Search          string
+	StatusFilter    string // "all", "enabled", "disabled"
+	AgentFilter     string
+	ScheduleFilter  string // "all", "every", "cron", "at"
+	UserID          string
+}
+
 // CronStore manages scheduled jobs.
 type CronStore interface {
 	AddJob(name string, schedule CronSchedule, message string, deliver bool, channel, to, agentID, userID string) (*CronJob, error)
 	GetJob(jobID string) (*CronJob, bool)
-	ListJobs(includeDisabled bool, agentID, userID string) []CronJob
+	ListJobs(filter ListJobsFilter) []CronJob
 	RemoveJob(jobID string) error
 	UpdateJob(jobID string, patch CronJobPatch) (*CronJob, error)
 	EnableJob(jobID string, enabled bool) error
-	GetRunLog(jobID string, limit int) []CronRunLogEntry
+	GetRunLog(jobID string, limit, offset int) ([]CronRunLogEntry, int, error)
 	Status() map[string]interface{}
 
 	// Lifecycle

@@ -140,7 +140,11 @@ func (t *CronTool) handleStatus() *Result {
 
 func (t *CronTool) handleList(args map[string]interface{}, agentID, userID string) *Result {
 	includeDisabled, _ := args["includeDisabled"].(bool)
-	jobs := t.cronStore.ListJobs(includeDisabled, agentID, userID)
+	jobs := t.cronStore.ListJobs(store.ListJobsFilter{
+		IncludeDisabled: includeDisabled,
+		AgentFilter:     agentID,
+		UserID:          userID,
+	})
 
 	result := map[string]interface{}{
 		"jobs":  jobs,
@@ -347,14 +351,22 @@ func (t *CronTool) handleRuns(args map[string]interface{}, agentID, userID strin
 	}
 
 	limit := 20
+	offset := 0
 	if v, ok := numberFromMap(args, "limit"); ok {
 		limit = int(v)
 	}
+	if v, ok := numberFromMap(args, "offset"); ok {
+		offset = int(v)
+	}
 
-	entries := t.cronStore.GetRunLog(jobID, limit)
+	entries, total, err := t.cronStore.GetRunLog(jobID, limit, offset)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to get run log: %v", err))
+	}
 
 	result := map[string]interface{}{
 		"entries": entries,
+		"total":   total,
 		"count":   len(entries),
 	}
 	data, _ := json.MarshalIndent(result, "", "  ")

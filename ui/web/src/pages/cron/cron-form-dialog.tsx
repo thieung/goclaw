@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { CronSchedule } from "./hooks/use-cron";
+import type { CronSchedule, CronJob } from "./hooks/use-cron";
 import { slugify, isValidSlug } from "@/lib/slug";
 
 interface CronFormDialogProps {
@@ -22,11 +22,18 @@ interface CronFormDialogProps {
     message: string;
     agentId?: string;
   }) => Promise<void>;
+  onEdit?: (jobId: string, data: {
+    name?: string;
+    schedule?: CronSchedule;
+    message?: string;
+    agentId?: string;
+  }) => Promise<void>;
+  editJob?: CronJob | null;
 }
 
 type ScheduleKind = "every" | "cron" | "at";
 
-export function CronFormDialog({ open, onOpenChange, onSubmit }: CronFormDialogProps) {
+export function CronFormDialog({ open, onOpenChange, onSubmit, onEdit, editJob }: CronFormDialogProps) {
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   const [agentId, setAgentId] = useState("");
@@ -34,6 +41,29 @@ export function CronFormDialog({ open, onOpenChange, onSubmit }: CronFormDialogP
   const [everyValue, setEveryValue] = useState("60");
   const [cronExpr, setCronExpr] = useState("0 * * * *");
   const [saving, setSaving] = useState(false);
+
+  // Pre-populate form when editing
+  useEffect(() => {
+    if (editJob) {
+      setName(editJob.name);
+      setMessage(editJob.payload?.message || "");
+      setAgentId(editJob.agentId || "");
+      setScheduleKind(editJob.schedule.kind as ScheduleKind);
+      if (editJob.schedule.kind === "every") {
+        setEveryValue(String((editJob.schedule.everyMs || 60000) / 1000));
+      } else if (editJob.schedule.kind === "cron") {
+        setCronExpr(editJob.schedule.expr || "");
+      }
+    } else {
+      // Reset form when not editing
+      setName("");
+      setMessage("");
+      setAgentId("");
+      setScheduleKind("every");
+      setEveryValue("60");
+      setCronExpr("0 * * * *");
+    }
+  }, [editJob]);
 
   const handleSubmit = async () => {
     if (!name.trim() || !message.trim()) return;
@@ -49,16 +79,27 @@ export function CronFormDialog({ open, onOpenChange, onSubmit }: CronFormDialogP
 
     setSaving(true);
     try {
-      await onSubmit({
-        name: name.trim(),
-        schedule,
-        message: message.trim(),
-        agentId: agentId.trim() || undefined,
-      });
+      if (editJob && onEdit) {
+        await onEdit(editJob.id, {
+          name: name.trim() || undefined,
+          schedule,
+          message: message.trim() || undefined,
+          agentId: agentId.trim() || undefined,
+        });
+      } else {
+        await onSubmit({
+          name: name.trim(),
+          schedule,
+          message: message.trim(),
+          agentId: agentId.trim() || undefined,
+        });
+      }
       onOpenChange(false);
-      setName("");
-      setMessage("");
-      setAgentId("");
+      if (!editJob) {
+        setName("");
+        setMessage("");
+        setAgentId("");
+      }
     } finally {
       setSaving(false);
     }
@@ -68,7 +109,7 @@ export function CronFormDialog({ open, onOpenChange, onSubmit }: CronFormDialogP
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-lg flex flex-col">
         <DialogHeader>
-          <DialogTitle>Create Cron Job</DialogTitle>
+          <DialogTitle>{editJob ? "Edit Cron Job" : "Create Cron Job"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 overflow-y-auto min-h-0">
           <div className="space-y-2">

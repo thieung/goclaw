@@ -38,28 +38,40 @@ export interface CronJob {
   };
 }
 
+export interface CronListResponse {
+  jobs: CronJob[];
+  mode: "standalone" | "managed";
+  count: number;
+}
+
 export interface CronRunLogEntry {
   ts: number;
   jobId: string;
   status?: string;
   error?: string;
   summary?: string;
+  durationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export function useCron() {
   const ws = useWs();
   const queryClient = useQueryClient();
 
-  const { data: jobs = [], isLoading: loading } = useQuery({
+  const { data: cronData, isLoading: loading } = useQuery({
     queryKey: queryKeys.cron.all,
     queryFn: async () => {
-      if (!ws.isConnected) return [];
-      const res = await ws.call<{ jobs: CronJob[] }>(Methods.CRON_LIST, {
+      if (!ws.isConnected) return { jobs: [], mode: "standalone" as const, count: 0 };
+      const res = await ws.call<CronListResponse>(Methods.CRON_LIST, {
         includeDisabled: true,
       });
-      return res.jobs ?? [];
+      return res ?? { jobs: [], mode: "standalone" as const, count: 0 };
     },
   });
+
+  const jobs = cronData?.jobs ?? [];
+  const mode = cronData?.mode ?? "standalone";
 
   const invalidate = useCallback(
     () => queryClient.invalidateQueries({ queryKey: queryKeys.cron.all }),
@@ -77,6 +89,19 @@ export function useCron() {
       to?: string;
     }) => {
       await ws.call(Methods.CRON_CREATE, params);
+      await invalidate();
+    },
+    [ws, invalidate],
+  );
+
+  const editJob = useCallback(
+    async (jobId: string, params: {
+      name?: string;
+      schedule?: CronSchedule;
+      message?: string;
+      agentId?: string;
+    }) => {
+      await ws.call(Methods.CRON_UPDATE, { jobId, patch: params });
       await invalidate();
     },
     [ws, invalidate],
@@ -106,16 +131,17 @@ export function useCron() {
   );
 
   const getRunLog = useCallback(
-    async (jobId: string, limit = 20): Promise<CronRunLogEntry[]> => {
-      if (!ws.isConnected) return [];
-      const res = await ws.call<{ entries: CronRunLogEntry[] }>(Methods.CRON_RUNS, {
+    async (jobId: string, limit = 20, offset = 0): Promise<{ entries: CronRunLogEntry[]; total: number }> => {
+      if (!ws.isConnected) return { entries: [], total: 0 };
+      const res = await ws.call<{ entries: CronRunLogEntry[]; total: number }>(Methods.CRON_RUNS, {
         jobId,
         limit,
+        offset,
       });
-      return res.entries ?? [];
+      return res ?? { entries: [], total: 0 };
     },
     [ws],
   );
 
-  return { jobs, loading, refresh: invalidate, createJob, toggleJob, deleteJob, runJob, getRunLog };
+  return { jobs, mode, loading, refresh: invalidate, createJob, editJob, toggleJob, deleteJob, runJob, getRunLog };
 }
