@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Pagination } from "@/components/shared/pagination";
@@ -373,24 +372,18 @@ export function CronPage() {
                       )}
                     </td>
                     <td className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="cursor-help">{job.payload?.message}</span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-md">
-                            <p className="whitespace-pre-wrap">{job.payload?.message}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      {job.payload?.message}
                     </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
                           title="Run now"
-                          onClick={() => runJob(job.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            runJob(job.id);
+                          }}
                         >
                           <Play className="h-3.5 w-3.5" />
                         </Button>
@@ -398,7 +391,10 @@ export function CronPage() {
                           variant="ghost"
                           size="icon"
                           title="Run history"
-                          onClick={() => handleShowRunLog(job)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleShowRunLog(job);
+                          }}
                         >
                           <History className="h-3.5 w-3.5" />
                         </Button>
@@ -406,7 +402,10 @@ export function CronPage() {
                           variant="ghost"
                           size="icon"
                           title="Delete"
-                          onClick={() => setDeleteTarget(job)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget(job);
+                          }}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
