@@ -752,7 +752,13 @@ func runGateway() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	server.StartUpdateChecker(ctx)
+	// Swap pre-downloaded binary if available (from previous auto-download).
+	gateway.SwapPreDownloadedBinary()
+
+	server.StartUpdateChecker(ctx, gateway.UpdateCheckerConfig{
+		Mode:          cfg.Update.Mode,
+		CheckInterval: cfg.Update.CheckInterval,
+	})
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

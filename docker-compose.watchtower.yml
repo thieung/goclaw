@@ -1,0 +1,20 @@
+# Watchtower overlay — automatic container updates.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+#     -f docker-compose.selfservice.yml -f docker-compose.watchtower.yml up -d
+#
+# Watchtower monitors running containers and pulls new images automatically.
+# Default: checks every 24 hours. GoClaw handles DB migrations on startup
+# (GOCLAW_AUTO_UPGRADE=true in docker-compose.yml).
+
+services:
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=86400
+      - WATCHTOWER_INCLUDE_STOPPED=false
+    restart: unless-stopped

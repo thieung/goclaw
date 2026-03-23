@@ -52,8 +52,20 @@ type Config struct {
 	Cron      CronConfig      `json:"cron"`
 	Telemetry TelemetryConfig `json:"telemetry"`
 	Tailscale TailscaleConfig `json:"tailscale"`
+	Update    UpdateConfig    `json:"update"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	mu        sync.RWMutex
+}
+
+// UpdateConfig configures the auto-update behavior.
+type UpdateConfig struct {
+	// Mode controls update behavior: "off", "notify" (default), or "download".
+	// - off: disable all version checks
+	// - notify: check and log/expose via health endpoint (default)
+	// - download: notify + background-download new binary for restart
+	Mode string `json:"mode,omitempty"`
+	// CheckInterval is the duration between version checks (default: "1h").
+	CheckInterval string `json:"check_interval,omitempty"`
 }
 
 // TailscaleConfig configures the optional Tailscale tsnet listener.
@@ -387,6 +399,7 @@ func (c *Config) ReplaceFrom(src *Config) {
 	c.Cron = src.Cron
 	c.Telemetry = src.Telemetry
 	c.Tailscale = src.Tailscale
+	c.Update = src.Update
 	c.Bindings = src.Bindings
 }
 
