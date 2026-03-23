@@ -147,7 +147,7 @@ func (su *SelfUpdater) DownloadRelease(version string) (string, error) {
 func (su *SelfUpdater) VerifyChecksum(tarballPath, version string) error {
 	checksumURL := su.downloadURL(version, fmt.Sprintf("goclaw-%s-checksums.txt", strings.TrimPrefix(version, "v")))
 
-	resp, err := http.Get(checksumURL) //nolint:gosec
+	resp, err := downloadClient.Get(checksumURL) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("download checksums: %w", err)
 	}
