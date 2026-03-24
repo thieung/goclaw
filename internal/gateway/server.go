@@ -592,8 +592,8 @@ func (s *Server) Version() string { return s.version }
 
 // StartUpdateChecker starts a background goroutine that periodically checks
 // GitHub for new releases and caches the result for the health endpoint.
-func (s *Server) StartUpdateChecker(ctx context.Context) {
-	s.updateChecker = NewUpdateChecker(s.version)
+func (s *Server) StartUpdateChecker(ctx context.Context, cfg UpdateCheckerConfig) {
+	s.updateChecker = NewUpdateChecker(s.version, cfg)
 	s.updateChecker.Start(ctx)
 }
 

@@ -472,6 +472,7 @@ func (r *MethodRouter) handleHealth(ctx context.Context, client *Client, req *pr
 			resp["latestVersion"] = info.LatestVersion
 			resp["updateAvailable"] = info.UpdateAvailable
 			resp["updateUrl"] = info.UpdateURL
+			resp["updateDownloaded"] = info.Downloaded
 		}
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, resp))

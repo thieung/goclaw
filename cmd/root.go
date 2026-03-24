@@ -43,6 +43,7 @@ func init() {
 	rootCmd.AddCommand(sessionsCmd())
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(upgradeCmd())
+	rootCmd.AddCommand(updateCmd())
 	rootCmd.AddCommand(authCmd())
 }
 
